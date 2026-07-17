@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// Главный конфиг сервера.
 ///
 /// Читается из `config.toml` в текущей директории или из пути,
 /// переданного через аргумент `--config`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     /// Серверная часть
     #[serde(default = "ServerConfig::default")]
@@ -19,7 +19,7 @@ pub struct AppConfig {
     pub proxy: Option<ProxyConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     /// Адрес для прослушивания
     #[serde(default = "default_host")]
@@ -30,7 +30,7 @@ pub struct ServerConfig {
     pub port: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ImageConfig {
     /// Ресайзить изображения, если меньшая сторона превышает это значение (в пикселях).
     /// 0 — не ресайзить.
@@ -58,7 +58,7 @@ pub struct ImageConfig {
     pub prefer_original_if_smaller: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ProxyConfig {
     /// Адрес SOCKS5 прокси (например, "127.0.0.1:1080")
     pub address: String,
