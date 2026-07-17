@@ -1,6 +1,6 @@
 use bh_rust::{config, dns, handlers};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use chrono::Utc;
 
 use std::net::SocketAddr;
 
@@ -45,10 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let client = build_client(&cfg)?;
 
     // Build router
-    let started_on = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
+    let started_on = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
 
     let state = AppState {
         config: cfg.clone(),

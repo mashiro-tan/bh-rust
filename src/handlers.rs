@@ -18,8 +18,8 @@ pub struct AppState {
     pub config: AppConfig,
     /// Готовый HTTP-клиент (с прокси, если настроен)
     pub client: reqwest::Client,
-    /// Таймштамп UTC старта сервера (секунды с эпохи)
-    pub started_on: u64,
+    /// Таймштамп UTC старта сервера в формате RFC 3339 (ISO 8601)
+    pub started_on: String,
     /// Счётчики статистики
     pub stats: Arc<Stats>,
 }
