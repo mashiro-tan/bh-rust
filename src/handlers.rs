@@ -214,10 +214,7 @@ pub async fn handle_compress(
 
     (
         StatusCode::OK,
-        [
-            ("Content-Type", response_content_type.as_str()),
-            ("Content-Length", response_data.len().to_string().as_str()),
-        ],
+        [("Content-Type", response_content_type.as_str())],
         response_data,
     )
         .into_response()
