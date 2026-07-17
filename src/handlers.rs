@@ -241,6 +241,9 @@ async fn download_image(
     url: &str,
     headers: Option<&HashMap<String, String>>,
 ) -> anyhow::Result<(Vec<u8>, String)> {
+    // Валидация URL-схемы (защита в глубину: только http/https)
+    crate::ssrf::validate_url_scheme(url)?;
+
     // Hop-by-hop заголовки, которые не нужно проксировать
     let hop_by_hop = [
         "connection",

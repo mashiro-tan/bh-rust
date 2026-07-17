@@ -1,4 +1,4 @@
-use bh_rust::{config, handlers};
+use bh_rust::{config, dns, handlers};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -76,9 +76,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Создать reqwest::Client с SOCKS5 прокси, если настроен.
+/// Создать reqwest::Client с SOCKS5 прокси и SSRF-защитой.
 fn build_client(cfg: &AppConfig) -> anyhow::Result<reqwest::Client> {
     let mut builder = reqwest::ClientBuilder::new()
+        .dns_resolver(std::sync::Arc::new(dns::SsrfDnsResolver))
         .timeout(std::time::Duration::from_secs(60))
         .connect_timeout(std::time::Duration::from_secs(15))
         .tcp_keepalive(std::time::Duration::from_secs(30))
