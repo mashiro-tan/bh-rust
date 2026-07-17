@@ -286,6 +286,14 @@ async fn download_image(
         })
         .unwrap_or_else(|| "application/octet-stream".to_string());
 
+    // Проверяем, что сервер вернул изображение, а не HTML-страницу или другой контент.
+    if content_type.as_str() != "application/octet-stream" && !content_type.starts_with("image/") {
+        anyhow::bail!(
+            "Source returned non-image content type: '{}'",
+            content_type
+        );
+    }
+
     let bytes = response.bytes().await?.to_vec();
     Ok((bytes, content_type))
 }
