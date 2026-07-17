@@ -279,7 +279,11 @@ async fn download_image(
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(str::to_string)
+        .map(|ct| {
+            // Извлекаем только MIME-тип, отбрасывая параметры (charset, boundary и т.д.).
+            // Для image/* параметры вроде charset не определены в RFC 2046.
+            ct.split(';').next().unwrap_or(ct).trim().to_string()
+        })
         .unwrap_or_else(|| "application/octet-stream".to_string());
 
     let bytes = response.bytes().await?.to_vec();
