@@ -127,6 +127,15 @@ pub async fn handle_compress(
     let to_bw = req.bw.unwrap_or(cfg.default_bw);
     let resize_short = req.resize.unwrap_or(cfg.resize_short_side);
 
+    // Валидация quality
+    if quality < 1 || quality > 100 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Quality must be between 1 and 100",
+        )
+            .into_response();
+    }
+
     // Скачать исходное изображение
     let (bytes, content_type) = match download_image(&state.client, &req.url, req.headers.as_ref()).await {
         Ok(data) => data,

@@ -104,13 +104,13 @@ pub fn process_image(
     //    image 0.25 поддерживает только lossless WebP, так что JPEG — единственный вариант)
     let mut cursor = Cursor::new(Vec::new());
     let output_format = if to_jpeg {
-        JpegEncoder::new_with_quality(&mut cursor, quality.max(1))
+        JpegEncoder::new_with_quality(&mut cursor, quality)
             .encode(&rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
             .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
         OutputFormat::Jpeg
     } else {
         // Fallback на JPEG (WebP lossless в image 0.25 даёт большие файлы для фото)
-        JpegEncoder::new_with_quality(&mut cursor, quality.max(1))
+        JpegEncoder::new_with_quality(&mut cursor, quality)
             .encode(&rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
             .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
         OutputFormat::Jpeg
