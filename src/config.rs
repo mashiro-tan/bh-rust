@@ -56,6 +56,11 @@ pub struct ImageConfig {
     /// Если сжатая копия больше оригинала — вернуть оригинал без изменений.
     #[serde(default = "default_prefer_original_if_smaller")]
     pub prefer_original_if_smaller: bool,
+
+    /// Максимально допустимый размер по любой из сторон (px). 0 = без лимита.
+    /// Изображения вне диапазона [1px, max_image_dimension] передаются как есть.
+    #[serde(default = "default_max_image_dimension")]
+    pub max_image_dimension: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +97,7 @@ impl Default for ImageConfig {
             default_bw: false,
             max_download_bytes: 0,
             prefer_original_if_smaller: default_prefer_original_if_smaller(),
+            max_image_dimension: default_max_image_dimension(),
         }
     }
 }
@@ -114,6 +120,10 @@ fn default_quality() -> u8 {
 
 fn default_prefer_original_if_smaller() -> bool {
     true
+}
+
+fn default_max_image_dimension() -> u32 {
+    65535
 }
 
 // ——— Loading ———

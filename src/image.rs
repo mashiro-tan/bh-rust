@@ -7,6 +7,35 @@ use image::{
 use tracing::info;
 use webp::Encoder;
 
+/// Ошибка обработки изображения.
+///
+/// `InvalidDimensions` означает, что размеры изображения выходят за допустимые
+/// пределы — в этом случае хендлер должен вернуть оригинал без изменений.
+#[derive(Debug)]
+pub enum ProcessImageError {
+    /// Размеры вне диапазона [1, max_dimension] — вернуть оригинал
+    InvalidDimensions(String),
+    /// Ошибка декодирования, ресайза, энкодинга — 500
+    Processing(anyhow::Error),
+}
+
+impl std::fmt::Display for ProcessImageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProcessImageError::InvalidDimensions(msg) => write!(f, "{}", msg),
+            ProcessImageError::Processing(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for ProcessImageError {}
+
+impl From<anyhow::Error> for ProcessImageError {
+    fn from(e: anyhow::Error) -> Self {
+        ProcessImageError::Processing(e)
+    }
+}
+
 /// Формат выходного изображения.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputFormat {
@@ -23,19 +52,39 @@ pub struct ProcessedImage {
     pub format: OutputFormat,
 }
 
-/// Обработать изображение: ресайз → B&W → сжатие/конвертация.
+/// Обработать изображение: валидация → ресайз → B&W → сжатие/конвертация.
+///
+/// `max_dimension` — максимально допустимый размер по любой из стороне.
+/// 0 отключает проверку сверху (минимум 1px остаётся).
+/// Если размеры невалидны — возвращается `ProcessImageError::InvalidDimensions`.
 pub fn process_image(
     raw: &[u8],
     to_jpeg: bool,
     quality: u8,
     to_bw: bool,
     resize_short_side: u32,
-) -> anyhow::Result<ProcessedImage> {
+    max_dimension: u32,
+) -> Result<ProcessedImage, ProcessImageError> {
     // 1. Декодировать
     let img = image::load_from_memory(raw)
-        .map_err(|e| anyhow::anyhow!("Failed to decode image: {}", e))?;
+        .map_err(|e| ProcessImageError::Processing(anyhow::anyhow!("Failed to decode image: {}", e)))?;
 
     let (orig_w, orig_h) = img.dimensions();
+
+    // 2. Валидация размеров
+    if orig_w < 1 || orig_h < 1 {
+        return Err(ProcessImageError::InvalidDimensions(format!(
+            "Image dimensions {}x{} are invalid (minimum 1x1)",
+            orig_w, orig_h
+        )));
+    }
+    if max_dimension > 0 && (orig_w > max_dimension || orig_h > max_dimension) {
+        return Err(ProcessImageError::InvalidDimensions(format!(
+            "Image dimensions {}x{} exceed maximum {}x{}",
+            orig_w, orig_h, max_dimension, max_dimension
+        )));
+    }
+
     let short_side = orig_w.min(orig_h);
 
     // Determine pixel format: grayscale or RGB (strip alpha — JPEG doesn't support it)

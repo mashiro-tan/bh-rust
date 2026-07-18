@@ -197,9 +197,20 @@ pub async fn handle_compress(
     }
 
     // Обработать изображение
-    let result = match crate::image::process_image(&bytes, to_jpeg, quality, to_bw, resize_short) {
+    let result = match crate::image::process_image(&bytes, to_jpeg, quality, to_bw, resize_short, cfg.max_image_dimension) {
         Ok(r) => r,
-        Err(e) => {
+        Err(crate::image::ProcessImageError::InvalidDimensions(msg)) => {
+            warn!(reason = %msg, "Image dimensions out of range — returning original");
+            state.stats.source_total.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+            state.stats.dest_total.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+            return (
+                StatusCode::OK,
+                [("Content-Type", content_type.as_str())],
+                bytes,
+            )
+                .into_response();
+        }
+        Err(crate::image::ProcessImageError::Processing(e)) => {
             error!(error = %e, "Failed to process image");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
