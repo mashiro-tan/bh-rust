@@ -72,7 +72,7 @@ default_bw = false               # Grayscale by default
 max_download_bytes = 0           # Max source image size (0 = unlimited)
 prefer_original_if_smaller = true # Return original if compressed is larger
 
-# Optional SOCKS5 proxy for outbound requests
+# Optional SOCKS5 proxy for outbound requests - only non-local ips for now
 # [proxy]
 # address = "127.0.0.1:1080"
 # username = "user"
