@@ -4,7 +4,7 @@ use fast_image_resize::{images::Image as FIrImage, PixelType, Resizer};
 use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, GrayImage, RgbImage,
 };
-use tracing::info;
+use tracing::{info, warn};
 use webp::Encoder;
 
 /// Ошибка обработки изображения.
@@ -135,16 +135,39 @@ pub fn process_image(
         )));
     }
 
-    // Determine pixel format: grayscale or RGB (strip alpha — JPEG doesn't support it)
-    let is_grayscale =
-        matches!(img, image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLumaA8(_));
+    // 5. B&W — преобразовать в grayscale (до ресайза и определения типа пикселей)
+    let img = if to_bw {
+        info!("Converting to grayscale");
+        img.grayscale().into()
+    } else {
+        img
+    };
+
+    // 6. Определить реальный тип пикселей после B&W-конвертации
+    //    Issue #8: логировать потерю alpha-канала
+    let is_grayscale = matches!(img, image::DynamicImage::ImageLuma8(_));
+    let has_alpha = matches!(
+        img,
+        image::DynamicImage::ImageRgba8(_) | image::DynamicImage::ImageLumaA8(_)
+    );
+    if has_alpha {
+        warn!("Image has alpha channel — transparency will be lost in output");
+    }
+
+    // Flatten RGBA → RGB (если нужно). Grayscale оставляем как есть.
+    let img = if is_grayscale {
+        img
+    } else {
+        image::DynamicImage::ImageRgb8(img.into_rgb8())
+    };
+
     let pixel_type = if is_grayscale {
         PixelType::U8
     } else {
         PixelType::U8x3
     };
 
-    // 6. Ресайз через fast_image_resize (SIMD-оптимизированный Lanczos3)
+    // 7. Ресайз через fast_image_resize (SIMD-оптимизированный Lanczos3)
     let img = if target_w != orig_w || target_h != orig_h {
         info!(
             original = "{}x{}",
@@ -155,16 +178,12 @@ pub fn process_image(
             "Resizing"
         );
 
-        // fast_image_resize::Resizer uses Lanczos3 by default (ResizeAlg::Convolution(Lanczos3))
         let mut resizer = Resizer::new();
-
         let mut dst = FIrImage::new(target_w, target_h, pixel_type);
-        // DynamicImage implements IntoImageView via the "image" feature
         resizer.resize(&img, &mut dst, None).map_err(|e| {
             anyhow::anyhow!("fast_image_resize error: {}", e)
         })?;
 
-        // Convert back to image::ImageBuffer
         let buf = dst.into_vec();
         if is_grayscale {
             let gray: GrayImage =
@@ -183,30 +202,44 @@ pub fn process_image(
         img
     };
 
-    // 3. Черно-белый
-    let img = if to_bw {
-        info!("Converting to grayscale");
-        img.grayscale().into()
+    // 8. Энкодинг
+    //    Issue #7: grayscale кодируем напрямую (1 канал), без бессмысленной конвертации в RGB
+    let (data, output_format) = if is_grayscale {
+        let gray = match &img {
+            image::DynamicImage::ImageLuma8(g) => g,
+            _ => unreachable!("is_grayscale is true but image is not Luma8"),
+        };
+        if to_jpeg {
+            let mut cursor = Cursor::new(Vec::new());
+            JpegEncoder::new_with_quality(&mut cursor, quality)
+                .encode(gray, gray.width(), gray.height(), ExtendedColorType::L8)
+                .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
+            (cursor.into_inner(), OutputFormat::Jpeg)
+        } else {
+            // WebP: webp crate не поддерживает grayscale напрямую → конвертируем в RGB
+            let rgb = img.to_rgb8();
+            let bytes = rgb.as_raw();
+            let webp_data = Encoder::from_rgb(&bytes, rgb.width(), rgb.height())
+                .encode(quality as f32);
+            ((*webp_data).to_vec(), OutputFormat::WebP)
+        }
     } else {
-        img
-    };
-
-    // 4. Конвертировать в RGB8 для энкодинга
-    let rgb = img.into_rgb8();
-
-    // 5. Энкодить
-    let (data, output_format) = if to_jpeg {
-        let mut cursor = Cursor::new(Vec::new());
-        JpegEncoder::new_with_quality(&mut cursor, quality)
-            .encode(&rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
-            .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
-        (cursor.into_inner(), OutputFormat::Jpeg)
-    } else {
-        // Lossy WebP via libwebp
-        let bytes = rgb.as_raw();
-        let webp_data = Encoder::from_rgb(&bytes, rgb.width(), rgb.height())
-            .encode(quality as f32);
-        ((*webp_data).to_vec(), OutputFormat::WebP)
+        let rgb = match &img {
+            image::DynamicImage::ImageRgb8(r) => r,
+            _ => unreachable!("is_grayscale is false but image is not Rgb8"),
+        };
+        if to_jpeg {
+            let mut cursor = Cursor::new(Vec::new());
+            JpegEncoder::new_with_quality(&mut cursor, quality)
+                .encode(rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
+                .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
+            (cursor.into_inner(), OutputFormat::Jpeg)
+        } else {
+            let bytes = rgb.as_raw();
+            let webp_data = Encoder::from_rgb(&bytes, rgb.width(), rgb.height())
+                .encode(quality as f32);
+            ((*webp_data).to_vec(), OutputFormat::WebP)
+        }
     };
 
     Ok(ProcessedImage { data, format: output_format })

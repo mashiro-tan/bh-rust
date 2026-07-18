@@ -14,7 +14,7 @@ fn minimal_png() -> Vec<u8> {
 #[test]
 fn test_process_image_basic() {
     let raw = minimal_png();
-    let result = bh_rust::image::process_image(&raw, true, 70, false, 720).unwrap();
+    let result = bh_rust::image::process_image(&raw, true, 70, false, 720, 65535, 0).unwrap();
 
     assert!(!result.data.is_empty());
     assert_eq!(result.format, bh_rust::image::OutputFormat::Jpeg);
@@ -23,7 +23,7 @@ fn test_process_image_basic() {
 #[test]
 fn test_process_image_bw() {
     let raw = minimal_png();
-    let result = bh_rust::image::process_image(&raw, true, 80, true, 0).unwrap();
+    let result = bh_rust::image::process_image(&raw, true, 80, true, 0, 65535, 0).unwrap();
 
     assert!(!result.data.is_empty());
 }
@@ -36,8 +36,8 @@ fn test_process_image_quality() {
     img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
     let raw = buf.into_inner();
 
-    let result_high = bh_rust::image::process_image(&raw, true, 95, false, 0).unwrap();
-    let result_low = bh_rust::image::process_image(&raw, true, 10, false, 0).unwrap();
+    let result_high = bh_rust::image::process_image(&raw, true, 95, false, 0, 65535, 0).unwrap();
+    let result_low = bh_rust::image::process_image(&raw, true, 10, false, 0, 65535, 0).unwrap();
 
     // Низкое качество = меньше файл
     assert!(
@@ -57,7 +57,7 @@ fn test_process_image_resize() {
     let raw = buf.into_inner();
 
     // Ресайз до 720 по меньшей стороне → 1280x720
-    let result = bh_rust::image::process_image(&raw, true, 80, false, 720).unwrap();
+    let result = bh_rust::image::process_image(&raw, true, 80, false, 720, 65535, 0).unwrap();
     let decoded = image::load_from_memory(&result.data).unwrap();
     let (w, h) = decoded.dimensions();
 
@@ -72,7 +72,7 @@ fn test_no_resize_when_small() {
     img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
     let raw = buf.into_inner();
 
-    let result = bh_rust::image::process_image(&raw, true, 80, false, 720).unwrap();
+    let result = bh_rust::image::process_image(&raw, true, 80, false, 720, 65535, 0).unwrap();
     let decoded = image::load_from_memory(&result.data).unwrap();
     let (w, h) = decoded.dimensions();
 
