@@ -197,7 +197,7 @@ pub async fn handle_compress(
     }
 
     // Обработать изображение
-    let result = match crate::image::process_image(&bytes, to_jpeg, quality, to_bw, resize_short, cfg.max_image_dimension) {
+    let result = match crate::image::process_image(&bytes, to_jpeg, quality, to_bw, resize_short, cfg.max_image_dimension, cfg.max_target_dimension) {
         Ok(r) => r,
         Err(crate::image::ProcessImageError::InvalidDimensions(msg))
         | Err(crate::image::ProcessImageError::DecodeFailed(msg)) => {

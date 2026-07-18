@@ -61,6 +61,14 @@ pub struct ImageConfig {
     /// Изображения вне диапазона [1px, max_image_dimension] передаются как есть.
     #[serde(default = "default_max_image_dimension")]
     pub max_image_dimension: u32,
+
+    /// Максимальное целевое разрешение по длинной стороне (px). 0 = без лимита.
+    /// Эффективный лимит — min(max_target_dimension, хард-лимит формата).
+    /// Хард-лимит: 16383 для WebP, 65535 для JPEG.
+    /// Если целевая сторона превышает лимит — пересчитываем.
+    /// Если после пересчёта короткая сторона < 1 — возвращаем оригинал.
+    #[serde(default)]
+    pub max_target_dimension: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,6 +106,7 @@ impl Default for ImageConfig {
             max_download_bytes: 0,
             prefer_original_if_smaller: default_prefer_original_if_smaller(),
             max_image_dimension: default_max_image_dimension(),
+            max_target_dimension: default_max_target_dimension(),
         }
     }
 }
@@ -124,6 +133,10 @@ fn default_prefer_original_if_smaller() -> bool {
 
 fn default_max_image_dimension() -> u32 {
     65535
+}
+
+fn default_max_target_dimension() -> u32 {
+    0
 }
 
 // ——— Loading ———

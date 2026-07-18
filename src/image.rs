@@ -55,11 +55,14 @@ pub struct ProcessedImage {
     pub format: OutputFormat,
 }
 
-/// Обработать изображение: валидация → ресайз → B&W → сжатие/конвертация.
+/// Обработать изображение: валидация → ресайз → проверка целевых размеров → B&W → сжатие.
 ///
-/// `max_dimension` — максимально допустимый размер по любой из стороне.
-/// 0 отключает проверку сверху (минимум 1px остаётся).
-/// Если размеры невалидны — возвращается `ProcessImageError::InvalidDimensions`.
+/// `max_dimension` — максимум по любой стороне исходного изображения (0 = без лимита).
+/// `max_target_dimension` — максимум по длинной стороне целевого изображения (0 = без лимита).
+/// Эффективный лимит — min(max_target_dimension, хард-лимит формата).
+/// Хард-лимит: 16383 для WebP, 65535 для JPEG.
+/// Если целевая длинная сторона превышает лимит — пересчитываем пропорционально.
+/// Если после пересчёта короткая сторона < 1 — возвращаем оригинал.
 pub fn process_image(
     raw: &[u8],
     to_jpeg: bool,
@@ -67,6 +70,7 @@ pub fn process_image(
     to_bw: bool,
     resize_short_side: u32,
     max_dimension: u32,
+    max_target_dimension: u32,
 ) -> Result<ProcessedImage, ProcessImageError> {
     // 1. Декодировать
     let img = image::load_from_memory(raw)
@@ -90,6 +94,47 @@ pub fn process_image(
 
     let short_side = orig_w.min(orig_h);
 
+    // 3. Вычислить целевые размеры (с учётом resize_short_side)
+    let mut target_w = orig_w;
+    let mut target_h = orig_h;
+
+    if resize_short_side > 0 && short_side > resize_short_side {
+        let scale = resize_short_side as f64 / short_side as f64;
+        target_w = (orig_w as f64 * scale).round() as u32;
+        target_h = (orig_h as f64 * scale).round() as u32;
+    }
+
+    // 4. Проверка целевых размеров по максимуму
+    // Хард-лимит по длинной стороне: 16383 для WebP, 65535 для JPEG
+    let hard_limit = if to_jpeg { 65535 } else { 16383 };
+    let effective_max = if max_target_dimension > 0 {
+        max_target_dimension.min(hard_limit)
+    } else {
+        hard_limit
+    };
+
+    let target_long = target_w.max(target_h);
+    if target_long > effective_max {
+        let scale = effective_max as f64 / target_long as f64;
+        target_w = (target_w as f64 * scale).round() as u32;
+        target_h = (target_h as f64 * scale).round() as u32;
+        info!(
+            hard_limit = hard_limit,
+            max_target = max_target_dimension,
+            effective_max = effective_max,
+            "Target dimensions clamped by format limit"
+        );
+    }
+
+    // 5. Проверка по минимуму: короткая сторона >= 1
+    let target_short = target_w.min(target_h);
+    if target_short < 1 {
+        return Err(ProcessImageError::InvalidDimensions(format!(
+            "Target dimensions {}x{} have short side < 1px after clamping",
+            target_w, target_h
+        )));
+    }
+
     // Determine pixel format: grayscale or RGB (strip alpha — JPEG doesn't support it)
     let is_grayscale =
         matches!(img, image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLumaA8(_));
@@ -99,16 +144,13 @@ pub fn process_image(
         PixelType::U8x3
     };
 
-    // 2. Ресайз через fast_image_resize (SIMD-оптимизированный Lanczos3)
-    let img = if resize_short_side > 0 && short_side > resize_short_side {
-        let scale = resize_short_side as f64 / short_side as f64;
-        let new_w = (orig_w as f64 * scale).round() as u32;
-        let new_h = (orig_h as f64 * scale).round() as u32;
+    // 6. Ресайз через fast_image_resize (SIMD-оптимизированный Lanczos3)
+    let img = if target_w != orig_w || target_h != orig_h {
         info!(
             original = "{}x{}",
             orig_w, orig_h,
             resized = "{}x{}",
-            new_w, new_h,
+            target_w, target_h,
             filter = "Lanczos3 (fast_image_resize SIMD)",
             "Resizing"
         );
@@ -116,7 +158,7 @@ pub fn process_image(
         // fast_image_resize::Resizer uses Lanczos3 by default (ResizeAlg::Convolution(Lanczos3))
         let mut resizer = Resizer::new();
 
-        let mut dst = FIrImage::new(new_w, new_h, pixel_type);
+        let mut dst = FIrImage::new(target_w, target_h, pixel_type);
         // DynamicImage implements IntoImageView via the "image" feature
         resizer.resize(&img, &mut dst, None).map_err(|e| {
             anyhow::anyhow!("fast_image_resize error: {}", e)
@@ -126,13 +168,13 @@ pub fn process_image(
         let buf = dst.into_vec();
         if is_grayscale {
             let gray: GrayImage =
-                GrayImage::from_raw(new_w, new_h, buf).ok_or_else(|| {
+                GrayImage::from_raw(target_w, target_h, buf).ok_or_else(|| {
                     anyhow::anyhow!("Failed to reconstruct grayscale image")
                 })?;
             image::DynamicImage::ImageLuma8(gray)
         } else {
             let rgb: RgbImage =
-                RgbImage::from_raw(new_w, new_h, buf).ok_or_else(|| {
+                RgbImage::from_raw(target_w, target_h, buf).ok_or_else(|| {
                     anyhow::anyhow!("Failed to reconstruct RGB image")
                 })?;
             image::DynamicImage::ImageRgb8(rgb)
