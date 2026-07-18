@@ -12,6 +12,31 @@ use tracing::{error, info, warn};
 
 use crate::{config::AppConfig, image::ProcessedImage};
 
+/// Ошибка скачивания изображения.
+///
+/// Для клиентских ошибок апстрима (4xx) сохраняем оригинальный статус,
+/// чтобы передать его клиенту без искажения.
+#[derive(Debug)]
+pub enum DownloadError {
+    /// Апстрим вернул 4xx — передаём как есть
+    UpstreamClientError(StatusCode),
+    /// Остальные ошибки — таймауты, 5xx, network, decode
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DownloadError::UpstreamClientError(status) => {
+                write!(f, "Source returned status {}", status)
+            }
+            DownloadError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for DownloadError {}
+
 /// Глобальное состояние, передаваемое в хендлеры.
 #[derive(Clone)]
 pub struct AppState {
@@ -139,7 +164,15 @@ pub async fn handle_compress(
     // Скачать исходное изображение
     let (bytes, content_type) = match download_image(&state.client, &req.url, req.headers.as_ref()).await {
         Ok(data) => data,
-        Err(e) => {
+        Err(DownloadError::UpstreamClientError(status)) => {
+            warn!(status = %status, url = %req.url, "Upstream returned client error — proxying to client");
+            return (
+                status,
+                "Source returned error",
+            )
+                .into_response();
+        }
+        Err(DownloadError::Other(e)) => {
             error!(error = %e, "Failed to download image");
             return (
                 StatusCode::BAD_GATEWAY,
@@ -246,9 +279,9 @@ async fn download_image(
     client: &reqwest::Client,
     url: &str,
     headers: Option<&HashMap<String, String>>,
-) -> anyhow::Result<(Vec<u8>, String)> {
+) -> Result<(Vec<u8>, String), DownloadError> {
     // Валидация URL-схемы (защита в глубину: только http/https)
-    crate::ssrf::validate_url_scheme(url)?;
+    crate::ssrf::validate_url_scheme(url).map_err(DownloadError::Other)?;
 
     // Hop-by-hop заголовки, которые не нужно проксировать
     let hop_by_hop = [
@@ -275,10 +308,17 @@ async fn download_image(
         }
     }
 
-    let response = request.send().await?;
+    let response = request.send().await.map_err(|e| DownloadError::Other(e.into()))?;
 
     if !response.status().is_success() {
-        anyhow::bail!("Source returned status {}", response.status());
+        let status = response.status();
+        if status.is_client_error() {
+            return Err(DownloadError::UpstreamClientError(status));
+        }
+        return Err(DownloadError::Other(anyhow::anyhow!(
+            "Source returned status {}",
+            status
+        )));
     }
 
     let content_type = response
@@ -294,13 +334,13 @@ async fn download_image(
 
     // Проверяем, что сервер вернул изображение, а не HTML-страницу или другой контент.
     if content_type.as_str() != "application/octet-stream" && !content_type.starts_with("image/") {
-        anyhow::bail!(
+        return Err(DownloadError::Other(anyhow::anyhow!(
             "Source returned non-image content type: '{}'",
             content_type
-        );
+        )));
     }
 
-    let bytes = response.bytes().await?.to_vec();
+    let bytes = response.bytes().await.map_err(|e| DownloadError::Other(e.into()))?.to_vec();
     Ok((bytes, content_type))
 }
 
