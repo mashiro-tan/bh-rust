@@ -19,6 +19,7 @@ reqwest = { version = "0.12", features = ["socks", "stream"] }
 # Image processing
 image = { version = "0.25", features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 fast_image_resize = { version = "5", features = ["image"] }
+webp = "0.3"
 
 # Config file
 config = { version = "0.15", features = ["toml"] }

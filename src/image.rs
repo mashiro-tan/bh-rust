@@ -5,13 +5,13 @@ use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, GrayImage, RgbImage,
 };
 use tracing::info;
+use webp::Encoder;
 
 /// Формат выходного изображения.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OutputFormat {
     Jpeg,
-    /// WebP (пока fallback на JPEG, т.к. image 0.25 поддерживает только lossless WebP)
-    #[allow(dead_code)]
+    /// Lossy WebP via the `webp` crate (wraps libwebp)
     WebP,
     #[allow(dead_code)]
     Png,
@@ -100,24 +100,20 @@ pub fn process_image(
     // 4. Конвертировать в RGB8 для энкодинга
     let rgb = img.into_rgb8();
 
-    // 5. Энкодить (всегда JPEG с контролем качества;
-    //    image 0.25 поддерживает только lossless WebP, так что JPEG — единственный вариант)
-    let mut cursor = Cursor::new(Vec::new());
-    let output_format = if to_jpeg {
+    // 5. Энкодить
+    let (data, output_format) = if to_jpeg {
+        let mut cursor = Cursor::new(Vec::new());
         JpegEncoder::new_with_quality(&mut cursor, quality)
             .encode(&rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
             .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
-        OutputFormat::Jpeg
+        (cursor.into_inner(), OutputFormat::Jpeg)
     } else {
-        // Fallback на JPEG (WebP lossless в image 0.25 даёт большие файлы для фото)
-        JpegEncoder::new_with_quality(&mut cursor, quality)
-            .encode(&rgb, rgb.width(), rgb.height(), ExtendedColorType::Rgb8)
-            .map_err(|e| anyhow::anyhow!("JPEG encoding error: {}", e))?;
-        OutputFormat::Jpeg
+        // Lossy WebP via libwebp
+        let bytes = rgb.as_raw();
+        let webp_data = Encoder::from_rgb(&bytes, rgb.width(), rgb.height())
+            .encode(quality as f32);
+        ((*webp_data).to_vec(), OutputFormat::WebP)
     };
 
-    Ok(ProcessedImage {
-        data: cursor.into_inner(),
-        format: output_format,
-    })
+    Ok(ProcessedImage { data, format: output_format })
 }

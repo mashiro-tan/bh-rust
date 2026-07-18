@@ -33,6 +33,15 @@ cargo build --release
 
 The binary is at `target/release/bh-rust`.
 
+### Cross-compilation for musl targets
+
+For musl targets (e.g. `aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl`, `mipsel-unknown-linux-musl`),
+set `LIBWEBP_SYS_STATIC=1` to statically link `libwebp`:
+
+```bash
+LIBWEBP_SYS_STATIC=1 cargo build --release --target <TARGET>
+```
+
 ## Usage
 
 ```bash
