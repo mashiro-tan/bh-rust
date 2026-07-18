@@ -15,7 +15,9 @@ use webp::Encoder;
 pub enum ProcessImageError {
     /// Размеры вне диапазона [1, max_dimension] — вернуть оригинал
     InvalidDimensions(String),
-    /// Ошибка декодирования, ресайза, энкодинга — 500
+    /// Байты не являются валидным изображением — вернуть оригинал
+    DecodeFailed(String),
+    /// Ошибка ресайза, энкодинга — 500
     Processing(anyhow::Error),
 }
 
@@ -23,6 +25,7 @@ impl std::fmt::Display for ProcessImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProcessImageError::InvalidDimensions(msg) => write!(f, "{}", msg),
+            ProcessImageError::DecodeFailed(msg) => write!(f, "{}", msg),
             ProcessImageError::Processing(e) => write!(f, "{}", e),
         }
     }
@@ -67,7 +70,7 @@ pub fn process_image(
 ) -> Result<ProcessedImage, ProcessImageError> {
     // 1. Декодировать
     let img = image::load_from_memory(raw)
-        .map_err(|e| ProcessImageError::Processing(anyhow::anyhow!("Failed to decode image: {}", e)))?;
+        .map_err(|e| ProcessImageError::DecodeFailed(format!("Failed to decode image: {}", e)))?;
 
     let (orig_w, orig_h) = img.dimensions();
 
